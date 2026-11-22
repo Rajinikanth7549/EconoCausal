@@ -16,13 +16,20 @@ body {
 }
 
 .sidebar {
+  position: fixed;
+  top: 0;
+  left: 0;
   width: 245px;
+  height: 100vh;
   background-color: #0f172a;
   color: #e2e8f0;
-  padding: 24px 16px;
+  padding: 20px 16px;
   display: flex;
   flex-direction: column;
-  justify-content: space-between;
+  justify-content: flex-start;
+  gap: 20px;
+  overflow-y: auto;
+  z-index: 20;
 }
 
 .brand {
@@ -32,8 +39,7 @@ body {
   font-size: 1.15rem;
   font-weight: 700;
   color: #ffffff;
-  margin-bottom: 28px;
-  padding: 0 8px;
+  padding: 4px 8px;
 }
 
 .nav-list {
@@ -66,6 +72,7 @@ body {
 }
 
 .sidebar-note {
+  margin-top: auto;
   font-size: 0.78rem;
   color: #94a3b8;
   border-top: 1px solid #1e293b;
@@ -74,9 +81,10 @@ body {
 }
 
 .main-content {
+  margin-left: 245px;
   flex: 1;
   padding: 28px 32px;
-  max-width: 1280px;
+  max-width: calc(100% - 245px);
 }
 
 .page-header {
