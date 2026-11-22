@@ -1,268 +1,415 @@
-
 import React, { useState } from "react";
-import { createRoot } from "react-dom/client";
+import ReactDOM from "react-dom/client";
 import {
-  Upload,
-  Wallet,
-  FileSpreadsheet,
-  CheckCircle,
-  AlertCircle,
-  BarChart3
-} from "lucide-react";
+  ResponsiveContainer,
+  LineChart,
+  Line,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  Tooltip,
+  CartesianGrid,
+  Legend,
+} from "recharts";
+import { Upload, TrendingUp, ShieldCheck, Sliders, AlertTriangle, CheckCircle2 } from "lucide-react";
 import "./style.css";
 
+const API_BASE = window.location.origin.replace("-5173.", "-8000.");
+
 function App() {
-  const [budget, setBudget] = useState("50000");
-  const [fileName, setFileName] = useState("");
-  const [rows, setRows] = useState([]);
-  const [message, setMessage] = useState("");
+  const [activeTab, setActiveTab] = useState("overview");
+  const [file, setFile] = useState(null);
+  const [budget, setBudget] = useState(50000);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+  const [data, setData] = useState(null);
+  const [segmentFilter, setSegmentFilter] = useState("ALL");
 
-  
-
-async function handleFileUpload(event) {
-  const file = event.target.files[0];
-  if (!file) return;
-
-  if (!file.name.toLowerCase().endsWith(".csv")) {
-    setMessage("Please upload a CSV file.");
-    setFileName("");
-    setRows([]);
-    return;
-  }
-
-  setFileName(file.name);
-  setMessage("Reading CSV and connecting to backend...");
-  setRows([]);
-
-  // Read the CSV for the existing five-row preview
-  const reader = new FileReader();
-
-  reader.onload = (e) => {
-    const text = e.target.result;
-    const lines = text.trim().split(/\r?\n/);
-
-    if (lines.length < 2) {
-      setRows([]);
-      setMessage("The CSV has no data rows.");
+  const runPipeline = async (e) => {
+    e.preventDefault();
+    if (!file) {
+      setError("Please select a CSV file (such as synthetic_campaign_data.csv) first.");
       return;
     }
+    setLoading(true);
+    setError("");
 
-    const headers = lines[0].split(",").map((h) => h.trim());
+    try {
+      const formData = new FormData();
+      formData.append("file", file);
+      formData.append("budget", String(budget));
 
-    const preview = lines.slice(1, 6).map((line) => {
-      const values = line.split(",");
-      return Object.fromEntries(
-        headers.map((header, index) => [
-          header,
-          values[index] ?? ""
-        ])
-      );
-    });
+      const res = await fetch(`${API_BASE}/analyze/full`, {
+        method: "POST",
+        body: formData,
+      });
 
-    setRows(preview);
+      const payload = await res.json();
+      if (!res.ok) {
+        throw new Error(payload.detail || "Backend analysis failed.");
+      }
+      setData(payload);
+    } catch (err) {
+      setError(err.message || "Failed to reach backend API. Ensure port 8000 is running and Public.");
+    } finally {
+      setLoading(false);
+    }
   };
 
-  reader.readAsText(file);
+  const summary = data?.summary;
+  const causal = data?.causal;
+  const opt = data?.optimization;
+  const drift = causal?.drift_report;
 
-  // Send the complete CSV to FastAPI
-  try {
-    const formData = new FormData();
-    formData.append("file", file);
-
-    const response = await fetch(
-      "https://wild-cemetery-4jwg7wv75pj534rw-8000.app.github.dev/dataset/summary",
-      {
-        method: "POST",
-        body: formData
-      }
-    );
-
-    const result = await response.json();
-
-    if (!response.ok) {
-      throw new Error(result.detail || "Backend request failed.");
-    }
-
-    setMessage(
-      `Backend success: ${result.rows} rows, ${result.columns} columns.`
-    );
-
-    console.log("Backend dataset summary:", result);
-  } catch (error) {
-    setMessage(`Backend upload failed: ${error.message}`);
-  }
-}
-
+  const filteredCustomers = (causal?.customers || []).filter((row) =>
+    segmentFilter === "ALL" ? true : row.causal_segment === segmentFilter
+  );
 
   return (
-    <div className="app">
+    <div className="app-shell">
       <aside className="sidebar">
         <div className="brand">
-          <div className="brand-icon">E</div>
-          <div>
-            <h2>EconoCausal</h2>
-            <p>Pricing intelligence</p>
-          </div>
+          <TrendingUp size={22} />
+          <span>EconoCausal</span>
         </div>
-
-        <p className="nav-label">WORKSPACE</p>
-        <div className="nav-item active">
-          <BarChart3 size={18} /> Dashboard
-        </div>
-        <div className="nav-item">
-          <FileSpreadsheet size={18} /> Campaign data
-        </div>
-        <div className="nav-item">
-          <Wallet size={18} /> Budget settings
-        </div>
-
-        <div className="sidebar-footer">
-          Week 1 · Dashboard scaffold
+        <nav className="nav-list">
+          <button
+            className={`nav-item ${activeTab === "overview" ? "active" : ""}`}
+            onClick={() => setActiveTab("overview")}
+          >
+            Overview & Data
+          </button>
+          <button
+            className={`nav-item ${activeTab === "causal" ? "active" : ""}`}
+            onClick={() => setActiveTab("causal")}
+          >
+            Causal Analysis (DoWhy & DML)
+          </button>
+          <button
+            className={`nav-item ${activeTab === "optimization" ? "active" : ""}`}
+            onClick={() => setActiveTab("optimization")}
+          >
+            Budget Optimization (MILP)
+          </button>
+        </nav>
+        <div className="sidebar-note">
+          <strong>Ref:</strong> ITS/DSML/1186
+          <br />
+          DML + MILP Dynamic Pricing
         </div>
       </aside>
 
-      <main className="main">
-        <header className="topbar">
+      <main className="main-content">
+        <header className="page-header">
           <div>
-            <p className="eyebrow">CAMPAIGN WORKSPACE</p>
-            <h1>Dashboard</h1>
+            <h1>Dynamic Pricing & Causal Uplift Platform</h1>
+            <p className="subtitle">
+              Double Machine Learning (EconML), DoWhy Causal Refutation & SciPy MILP Budget Allocation
+            </p>
           </div>
-          <span className="status">Prototype</span>
         </header>
 
-        <section className="welcome">
-          <div>
-            <p className="eyebrow">ECONOMICS + CAUSAL INFERENCE</p>
-            <h2>Understand your campaign data.</h2>
-            <p>
-              Upload historical campaigns and set a budget constraint
-              to prepare for future pricing analysis.
-            </p>
-          </div>
-          <div className="welcome-icon">
-            <BarChart3 size={36} />
-          </div>
-        </section>
-
-        <section className="cards">
-          <article className="card">
-            <div className="card-heading">
-              <span>Historical campaign data</span>
-              <FileSpreadsheet size={20} />
-            </div>
-            <h3>Upload a CSV file</h3>
-            <p className="muted">
-              Choose a historical campaign dataset from your computer.
-            </p>
-
-            <label className="upload-area">
-              <Upload size={26} />
-              <strong>Choose CSV file</strong>
-              <span>CSV format only</span>
+        <form className="control-card" onSubmit={runPipeline}>
+          <div className="control-row">
+            <div className="control-group">
+              <label htmlFor="csv-upload">
+                <Upload size={16} /> Campaign Dataset CSV
+              </label>
               <input
+                id="csv-upload"
                 type="file"
-                accept=".csv,text/csv"
-                onChange={handleFileUpload}
+                accept=".csv"
+                onChange={(e) => setFile(e.target.files?.[0] || null)}
               />
-            </label>
-
-            {fileName && (
-              <p className="file-info">
-                <CheckCircle size={16} /> {fileName}
-              </p>
-            )}
-
-            {message && (
-              <p className={message.startsWith("CSV loaded") ? "file-info" : "message"}>
-                <AlertCircle size={16} /> {message}
-              </p>
-            )}
-          </article>
-
-          <article className="card">
-            <div className="card-heading">
-              <span>Budget constraints</span>
-              <Wallet size={20} />
-            </div>
-            <h3>Set campaign budget</h3>
-            <p className="muted">
-              Enter the maximum budget available for a campaign.
-            </p>
-
-            <label className="field-label" htmlFor="budget">
-              Maximum budget (₹)
-            </label>
-            <input
-              id="budget"
-              className="budget-input"
-              type="number"
-              min="0"
-              value={budget}
-              onChange={(event) => setBudget(event.target.value)}
-            />
-
-            <div className="budget-summary">
-              <span>Selected budget</span>
-              <strong>
-                ₹{Number(budget || 0).toLocaleString("en-IN")}
-              </strong>
             </div>
 
-            <p className="muted small">
-              This setting is local to this prototype; it is not yet
-              connected to an optimization engine.
-            </p>
-          </article>
-        </section>
-
-        <section className="card preview-card">
-          <div className="preview-heading">
-            <div>
-              <h3>Dataset preview</h3>
-              <p className="muted">
-                The first five data rows appear here after CSV upload.
-              </p>
+            <div className="control-group">
+              <label htmlFor="budget-input">
+                <Sliders size={16} /> Promotional Budget Cap ($)
+              </label>
+              <input
+                id="budget-input"
+                type="number"
+                min="100"
+                step="500"
+                value={budget}
+                onChange={(e) => setBudget(Number(e.target.value) || 0)}
+              />
             </div>
-            {rows.length > 0 && (
-              <span className="status">{rows.length} rows shown</span>
-            )}
+
+            <button type="submit" className="primary-btn" disabled={loading}>
+              {loading ? "Running Causal & MILP Pipeline..." : "Run Full Analysis"}
+            </button>
           </div>
+        </form>
 
-          {rows.length === 0 ? (
-            <div className="empty-state">
-              <FileSpreadsheet size={30} />
-              <p>No dataset uploaded yet.</p>
+        {error && (
+          <div className="alert error-alert">
+            <AlertTriangle size={18} />
+            <span>{error}</span>
+          </div>
+        )}
+
+        {data && (
+          <>
+            <div className="banner-grid">
+              <div className="banner roi-banner">
+                <CheckCircle2 size={18} />
+                <span>{opt.roi_summary}</span>
+              </div>
+              <div className={`banner ${drift.drift_detected ? "warn-banner" : "ok-banner"}`}>
+                <ShieldCheck size={18} />
+                <span>{drift.summary}</span>
+              </div>
             </div>
-          ) : (
-            <div className="table-wrap">
-              <table>
-                <thead>
-                  <tr>
-                    {Object.keys(rows[0]).map((header) => (
-                      <th key={header}>{header}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {rows.map((row, rowIndex) => (
-                    <tr key={rowIndex}>
-                      {Object.values(row).map((value, index) => (
-                        <td key={index}>{value}</td>
+
+            <div className="kpi-grid">
+              <div className="kpi-card">
+                <div className="kpi-label">TOTAL CUSTOMERS</div>
+                <div className="kpi-value">{summary.rows.toLocaleString()}</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">ESTIMATED ATE (DML)</div>
+                <div className="kpi-value">{(causal.estimated_ate * 100).toFixed(2)}%</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">PERSUADABLES TARGETED</div>
+                <div className="kpi-value">{opt.selected_customer_count.toLocaleString()}</div>
+              </div>
+              <div className="kpi-card">
+                <div className="kpi-label">EXPECTED NET PROFIT</div>
+                <div className="kpi-value">${opt.expected_incremental_profit.toLocaleString()}</div>
+              </div>
+            </div>
+
+            {activeTab === "overview" && (
+              <section className="section-grid">
+                <div className="panel">
+                  <h3>Dataset & Data Drift Monitor (KS-Test)</h3>
+                  <p className="muted">
+                    File: <strong>{summary.filename}</strong> · Columns: <strong>{summary.columns}</strong> ·
+                    Nulls: <strong>{summary.missing_values}</strong> · Baseline Conversion:{" "}
+                    <strong>{summary.purchase_rate_percent}%</strong>
+                  </p>
+                  <table className="data-table">
+                    <thead>
+                      <tr>
+                        <th>Feature</th>
+                        <th>KS Stat</th>
+                        <th>p-value</th>
+                        <th>Status</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {drift.features.map((f) => (
+                        <tr key={f.feature}>
+                          <td>{f.feature}</td>
+                          <td>{f.ks_stat}</td>
+                          <td>{f.p_value}</td>
+                          <td>
+                            <span className={`badge ${f.status === "Healthy" ? "badge-ok" : "badge-warn"}`}>
+                              {f.status}
+                            </span>
+                          </td>
+                        </tr>
                       ))}
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            </div>
-          )}
-        </section>
+                    </tbody>
+                  </table>
+                </div>
 
-        <footer>
-          EconoCausal · Week 1 frontend prototype
-        </footer>
+                <div className="panel">
+                  <h3>Causal Quadrant Breakdown</h3>
+                  <div className="chart-box">
+                    <ResponsiveContainer width="100%" height={260}>
+                      <BarChart data={causal.segment_breakdown}>
+                        <CartesianGrid strokeDasharray="3 3" />
+                        <XAxis dataKey="segment" />
+                        <YAxis />
+                        <Tooltip />
+                        <Bar dataKey="count" fill="#2563eb" radius={[6, 6, 0, 0]} />
+                      </BarChart>
+                    </ResponsiveContainer>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeTab === "causal" && (
+              <section className="section-stack">
+                <div className="section-grid">
+                  <div className="panel">
+                    <h3>Cumulative Uplift / Qini Curve</h3>
+                    <div className="chart-box">
+                      <ResponsiveContainer width="100%" height={280}>
+                        <LineChart data={causal.qini_curve}>
+                          <CartesianGrid strokeDasharray="3 3" />
+                          <XAxis dataKey="percentile" unit="%" />
+                          <YAxis />
+                          <Tooltip />
+                          <Legend />
+                          <Line
+                            type="monotone"
+                            dataKey="dml_uplift"
+                            name="DML Targeted Uplift"
+                            stroke="#2563eb"
+                            strokeWidth={2.5}
+                          />
+                          <Line
+                            type="monotone"
+                            dataKey="random_baseline"
+                            name="Random Rollout Baseline"
+                            stroke="#94a3b8"
+                            strokeDasharray="5 5"
+                          />
+                        </LineChart>
+                      </ResponsiveContainer>
+                    </div>
+                  </div>
+
+                  <div className="panel">
+                    <h3>DoWhy Causal Refutation Audits</h3>
+                    <div className="refute-card">
+                      <strong>Random Common Cause</strong>
+                      <p>
+                        New Effect: <strong>{causal.refutations.random_common_cause.new_effect}</strong> |
+                        p-value: <strong>{causal.refutations.random_common_cause.p_value}</strong> | Status:{" "}
+                        <span className="badge badge-ok">
+                          {causal.refutations.random_common_cause.passed ? "Passed" : "Review"}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="refute-card">
+                      <strong>Placebo Treatment Refuter</strong>
+                      <p>
+                        Placebo Effect: <strong>{causal.refutations.placebo_treatment.new_effect}</strong> |
+                        p-value: <strong>{causal.refutations.placebo_treatment.p_value}</strong> | Status:{" "}
+                        <span className="badge badge-ok">
+                          {causal.refutations.placebo_treatment.passed ? "Passed" : "Review"}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="dag-box">
+                      <strong>Causal DAG Specification:</strong> [{causal.dag.confounders.join(", ")}] →{" "}
+                      {causal.dag.treatment} → {causal.dag.outcome}
+                    </div>
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <div className="panel-header-row">
+                    <h3>Customer Individual Treatment Effect (ITE) Scores</h3>
+                    <select
+                      value={segmentFilter}
+                      onChange={(e) => setSegmentFilter(e.target.value)}
+                      className="filter-select"
+                    >
+                      <option value="ALL">All Causal Segments</option>
+                      <option value="Persuadables">Persuadables</option>
+                      <option value="Sure Things">Sure Things</option>
+                      <option value="Lost Causes">Lost Causes</option>
+                      <option value="Sleeping Dogs">Sleeping Dogs</option>
+                    </select>
+                  </div>
+                  <div className="table-scroll">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Customer ID</th>
+                          <th>Segment</th>
+                          <th>Region</th>
+                          <th>List Price ($)</th>
+                          <th>Estimated ITE</th>
+                          <th>Causal Quadrant</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filteredCustomers.slice(0, 50).map((c, idx) => (
+                          <tr key={`${c.customer_id}-${idx}`}>
+                            <td>{c.customer_id}</td>
+                            <td>{c.customer_segment}</td>
+                            <td>{c.region}</td>
+                            <td>${c.list_price}</td>
+                            <td>{c.estimated_ite}</td>
+                            <td>
+                              <span className="badge badge-ok">{c.causal_segment}</span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            )}
+
+            {activeTab === "optimization" && (
+              <section className="section-stack">
+                <div className="kpi-grid">
+                  <div className="kpi-card">
+                    <div className="kpi-label">BUDGET SPENT</div>
+                    <div className="kpi-value">${opt.total_budget_spent.toLocaleString()}</div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">BUDGET UTILIZATION</div>
+                    <div className="kpi-value">{opt.budget_utilization_percent}%</div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">ROI MULTIPLIER</div>
+                    <div className="kpi-value">{opt.roi_multiplier}x</div>
+                  </div>
+                  <div className="kpi-card">
+                    <div className="kpi-label">SAVINGS VS. BLANKET</div>
+                    <div className="kpi-value">${opt.savings_vs_blanket.toLocaleString()}</div>
+                  </div>
+                </div>
+
+                <div className="panel">
+                  <h3>SciPy MILP Personalized Discount Allocation Matrix</h3>
+                  <div className="table-scroll">
+                    <table className="data-table">
+                      <thead>
+                        <tr>
+                          <th>Customer ID</th>
+                          <th>Segment</th>
+                          <th>Region</th>
+                          <th>ITE</th>
+                          <th>Discount Cost ($)</th>
+                          <th>Expected Net Profit ($)</th>
+                          <th>MILP Decision</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {opt.allocation_matrix.slice(0, 60).map((r, idx) => (
+                          <tr key={`${r.customer_id}-${idx}`}>
+                            <td>{r.customer_id}</td>
+                            <td>{r.customer_segment}</td>
+                            <td>{r.region}</td>
+                            <td>{r.estimated_ite}</td>
+                            <td>${r.discount_cost}</td>
+                            <td>${r.expected_net_profit}</td>
+                            <td>
+                              <span className={`badge ${r.targeted ? "badge-ok" : "badge-muted"}`}>
+                                {r.action}
+                              </span>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </section>
+            )}
+          </>
+        )}
       </main>
     </div>
   );
 }
 
-createRoot(document.getElementById("root")).render(<App />);
+ReactDOM.createRoot(document.getElementById("root")).render(
+  <React.StrictMode>
+    <App />
+  </React.StrictMode>
+);
